@@ -125,7 +125,7 @@ extern void ksu_sucompat_exit();
 
 static inline bool is_allow_su()
 {
-	if (is_manager()) {
+	if (ksu_is_manager()) {
 		// we are manager, allow!
 		return true;
 	}
@@ -1053,7 +1053,7 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
 	}
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	// check if current process is zygote
+	// check if current process is zygote using SUSFS sid comparison
 	bool is_zygote_child = susfs_is_sid_equal(old->security, susfs_zygote_sid);
 	if (likely(is_zygote_child)) {
 		// if spawned process is non user app process
@@ -1064,7 +1064,17 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
 			}
 		}
 	}
+#else
+	// check old process's selinux context, if it is not zygote, ignore it!
+	// because some su apps may setuid to untrusted_app but they are in global mount namespace
+	// when we umount for such process, that is a disaster!
+	bool is_zygote_child = is_zygote(old->security);
 #endif
+	if (!is_zygote_child) {
+		pr_info("handle umount ignore non zygote child: %d\n",
+			current->pid);
+		return 0;
+	}
 
 	if (!is_appuid(new_uid) || is_unsupported_uid(new_uid.val)) {
 		// pr_info("handle setuid ignore non application or isolated uid: %d\n", new_uid.val);
@@ -1093,16 +1103,6 @@ out_ksu_try_umount:
 		pr_info("uid: %d should not umount!\n", current_uid().val);
 #endif
 	}
-
-	// check old process's selinux context, if it is not zygote, ignore it!
-	// because some su apps may setuid to untrusted_app but they are in global mount namespace
-	// when we umount for such process, that is a disaster!
-	bool is_zygote_child = is_zygote(old->security);
-	if (!is_zygote_child) {
-		pr_info("handle umount ignore non zygote child: %d\n",
-			current->pid);
-		return 0;
-	}
 #ifdef CONFIG_KSU_DEBUG
 	// umount the target mnt
 	pr_info("handle umount for uid: %d, pid: %d\n", new_uid.val,
@@ -1111,23 +1111,23 @@ out_ksu_try_umount:
 
 	// fixme: use `collect_mounts` and `iterate_mount` to iterate all mountpoint and
 	// filter the mountpoint whose target is `/data/adb`
-	try_umount("/odm", true, 0);
-	try_umount("/system", true, 0);
-	try_umount("/system_ext", true, 0);
-	try_umount("/vendor", true, 0);
-	try_umount("/product", true, 0);
-	try_umount("/data/adb/modules", false, MNT_DETACH);
+	ksu_try_umount("/odm", true, 0, new_uid.val);
+	ksu_try_umount("/system", true, 0, new_uid.val);
+	ksu_try_umount("/system_ext", true, 0, new_uid.val);
+	ksu_try_umount("/vendor", true, 0, new_uid.val);
+	ksu_try_umount("/product", true, 0, new_uid.val);
+	ksu_try_umount("/data/adb/modules", false, MNT_DETACH, new_uid.val);
 
 	// try umount ksu temp path
-	try_umount("/debug_ramdisk", false, MNT_DETACH);
-	try_umount("/sbin", false, MNT_DETACH);
+	ksu_try_umount("/debug_ramdisk", false, MNT_DETACH, new_uid.val);
+	ksu_try_umount("/sbin", false, MNT_DETACH, new_uid.val);
 
 	// try umount hosts file
-	try_umount("/system/etc/hosts", false, MNT_DETACH);
+	ksu_try_umount("/system/etc/hosts", false, MNT_DETACH, new_uid.val);
 
 	// try umount lsposed dex2oat bins
-	try_umount("/apex/com.android.art/bin/dex2oat64", false, MNT_DETACH);
-	try_umount("/apex/com.android.art/bin/dex2oat32", false, MNT_DETACH);
+	ksu_try_umount("/apex/com.android.art/bin/dex2oat64", false, MNT_DETACH, new_uid.val);
+	ksu_try_umount("/apex/com.android.art/bin/dex2oat32", false, MNT_DETACH, new_uid.val);
 
 	return 0;
 }
