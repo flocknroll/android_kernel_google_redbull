@@ -29,6 +29,10 @@ $(warning "KSU_GIT_VERSION not defined! It is better to make KernelSU-Next a git
 ccflags-y += -DKSU_VERSION=12823
 endif
 
+ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
+ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
+
+## For non-gki compatiblity ##
 ifeq ($(shell grep -q " current_sid(void)" $(srctree)/security/selinux/include/objsec.h; echo $$?),0)
 ccflags-y += -DKSU_COMPAT_HAS_CURRENT_SID
 endif
